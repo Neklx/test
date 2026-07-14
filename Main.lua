@@ -74,8 +74,10 @@ local function getActivePlayerModel(player)
     return nil
 end
 
-local function checkIsEnemy(player)
-    if not Menu_Config.EspTeamCheck then return true end
+local function checkIsEnemy(player, isAimbotCheck)
+    local checkEnabled = isAimbotCheck and Menu_Config.TeamCheck or Menu_Config.EspTeamCheck
+    if not checkEnabled then return true end
+    
     local myTeam = LocalPlayer:GetAttribute("Team")
     local playerTeam = player:GetAttribute("Team")
     if playerTeam == nil or myTeam == nil then
@@ -120,7 +122,7 @@ local function getAimTarget()
     local screenCenter = CurrentCamera.ViewportSize / 2
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and checkIsEnemy(player) then
+        if player ~= LocalPlayer and checkIsEnemy(player, true) then
             local model = getActivePlayerModel(player)
             if model then
                 local chosenPartName = Menu_Config.TargetPart
@@ -231,7 +233,6 @@ local function hookBulletSystem()
                 return oldCreate(self, aimingMode, isAiming)
             end
             hooked = true
-            break
         end
     end
     return hooked
@@ -301,7 +302,7 @@ local function applyPlayerESP(player)
         return
     end
 
-    local isEnemyPlr = checkIsEnemy(player)
+    local isEnemyPlr = checkIsEnemy(player, false)
     local espColor = isEnemyPlr and Menu_Config.EnemyColor or Menu_Config.TeamColor
     local shouldShow = Menu_Config.EspEnabled and (isEnemyPlr or Menu_Config.HighlightTeammates)
 
@@ -479,11 +480,8 @@ end
 local function processBhop()
     if not Menu_Config.BhopEnabled or not CharacterController then return end
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-        local activeChar = CharacterController.getCurrentCharacter()
-        if activeChar and activeChar.IsGrounded then
-            activeChar.IsJumpRequested = true
-            activeChar:Jump()
-        end
+        -- Execute immediate jump kinematics via official controller pipeline
+        pcall(CharacterController.jump)
     end
 end
 
