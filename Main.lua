@@ -2,13 +2,16 @@
 -- NEVERLOSE.CC - STANDALONE HUB BOOTSTRAPPER (Main.lua)
 -- ====================================================================================
 
+-- Generates a unique timestamp to force-bypass GitHub raw CDN caching
+local cacheBypass = "?t=" .. tostring(os.time())
+
 -- 1. Import Standalone UI Library
-local NeverloseLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/NeverloseLib.lua"))()
+local NeverloseLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/NeverloseLib.lua" .. cacheBypass))()
 
 -- 2. Import External Cheat Modules
-local Aimbot = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Aimbot.lua"))()
-local Visuals = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Visuals.lua"))()
-local Movement = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Movement.lua"))()
+local Aimbot = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Aimbot.lua" .. cacheBypass))()
+local Visuals = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Visuals.lua" .. cacheBypass))()
+local Movement = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Movement.lua" .. cacheBypass))()
 
 -- Initialize Movement Controller
 Movement:Initialize()
