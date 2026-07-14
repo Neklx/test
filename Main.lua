@@ -10,6 +10,9 @@ local Aimbot = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/
 local Visuals = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Visuals.lua"))()
 local Movement = loadstring(game:HttpGet("https://raw.githubusercontent.com/Neklx/test/main/Movement.lua"))()
 
+-- Initialize Movement Controller
+Movement:Initialize()
+
 -- 3. Create Neverlose Window Instance
 local Window = NeverloseLib:CreateWindow({
     Title = "NEVERLOSE.CC",
@@ -35,6 +38,10 @@ espCard:AddToggle("Display Health Bars", Visuals.ShowHealth, function(state) Vis
 espCard:AddToggle("Reveal Active Weapon", Visuals.ShowWeapons, function(state) Visuals.ShowWeapons = state end)
 espCard:AddToggle("Render Distance Metres", Visuals.ShowDistance, function(state) Visuals.ShowDistance = state end)
 
+local worldCard = visualPage:CreateCard("Active ESP World", "Right")
+worldCard:AddToggle("Planted C4 Esp", Visuals.C4_ESP, function(state) Visuals.C4_ESP = state end)
+worldCard:AddToggle("Grenades In-Flight Esp", Visuals.Grenade_ESP, function(state) Visuals.Grenade_ESP = state end)
+
 local themeCard = visualPage:CreateCard("ESP Theme Colors", "Right")
 themeCard:AddColorPicker("Allied Chams Color", Visuals.TeamColor, function(color) Visuals.TeamColor = color end)
 themeCard:AddColorPicker("Hostile Chams Color", Visuals.EnemyColor, function(color) Visuals.EnemyColor = color end)
@@ -46,10 +53,17 @@ moveCard:AddToggle("Bunnyhop (Bhop)", Movement.BhopEnabled, function(state) Move
 -- 5. Master Render Stepped Thread
 local RunService = game:GetService("RunService")
 local updateConnection = RunService.RenderStepped:Connect(function()
+    -- Process Bunnyhop calculations
+    if Movement.BhopEnabled then
+        pcall(function() Movement:ProcessBhop() end)
+    end
+
+    -- Process ESP calculations
     if Visuals.Enabled then
         for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
             pcall(function() Visuals:ApplyESP(player) end)
         end
+        pcall(function() Visuals:UpdateWorldObjects() end)
     else
         Visuals:ClearAll()
     end
