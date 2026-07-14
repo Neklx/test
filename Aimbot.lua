@@ -111,6 +111,7 @@ end
 function Aimbot:HookSystem()
     if typeof(getgc) ~= "function" then return false end
     
+    local hooked = false
     for _, v in ipairs(getgc(true)) do
         if typeof(v) == "table" and rawget(v, "create") and rawget(v, "getTrueSpread") then
             -- Safely bind the target resolver internally inside the matched table
@@ -118,7 +119,14 @@ function Aimbot:HookSystem()
             
             local oldCreate = v.create
             v.create = function(self, aimingMode, isAiming)
-                local targetPart = self:GetTarget() -- Target redirection check
+                -- Double check that the GetTarget reference is present before calling
+                local targetPart = nil
+                if typeof(self.GetTarget) == "function" then
+                    targetPart = self:GetTarget()
+                else
+                    targetPart = Aimbot:GetTarget()
+                end
+
                 if targetPart and Aimbot.SilentAim then
                     local origin = CurrentCamera.CFrame.Position
                     local targetPos = targetPart.Position
@@ -171,13 +179,24 @@ function Aimbot:HookSystem()
                 end
                 return oldCreate(self, aimingMode, isAiming)
             end
-            return true
+            hooked = true
+            break
         end
     end
-    return false
+    return hooked
 end
 
--- Execute the memory trajectory redirection hook on module initialization
-Aimbot:HookSystem()
+-- Run in background thread until successfully hooked
+task.spawn(function()
+    while true do
+        local success = pcall(function()
+            return Aimbot:HookSystem()
+        end)
+        if success then 
+            break 
+        end
+        task.wait(1.5)
+    end
+end)
 
 return Aimbot
