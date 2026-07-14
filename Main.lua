@@ -157,11 +157,9 @@ local function findLocomotionControllers()
     
     for _, v in ipairs(getgc(true)) do
         if typeof(v) == "table" then
-            -- Match CharacterController
             if rawget(v, "getCurrentCharacter") and rawget(v, "jump") then
                 CharacterController = v
             end
-            -- Match Character class prototype
             if rawget(v, "CheckGroundContact") and rawget(v, "MoveFunction") then
                 CharacterClass = v
             end
@@ -170,102 +168,36 @@ local function findLocomotionControllers()
     end
 end
 
--- ====================================================================================
--- Silent Aim Injection Hook (Constructor Method Hooking)
--- ====================================================================================
-local function hookBulletSystem()
-    if typeof(getgc) ~= "function" then return false end
-    
-    local hooked = false
-    for _, v in ipairs(getgc(true)) do
-        if typeof(v) == "table" and rawget(v, "new") and typeof(v.new) == "function" then
-            -- Check if this constructor builds the Bullet objects
-            local debugInfo = debug.info(v.new, "s") or ""
-            if debugInfo:find("Bullet") or debugInfo:find("Classes.Bullet") then
-                local oldConstructor = v.new
-                v.new = function(...)
-                    local instance = oldConstructor(...)
-                    if typeof(instance) == "table" then
-                        -- Hook instance specifically upon spawning
-                        local oldCreate = instance.create
-                        instance.create = function(self, aimingMode, isAiming)
-                            local targetPart = getAimTarget()
-                            if targetPart and Menu_Config.SilentAim then
-                                local origin = CurrentCamera.CFrame.Position
-                                local targetPos = targetPart.Position
-                                local direction = (targetPos - origin).Unit
-                                
-                                local hits = {}
-                                local rangeLimit = self.Properties.Range or 500
-                                local ignoreList = { LocalPlayer.Character, targetPart.Parent }
-                                local lastPos = origin
-                                
-                                for step = 1, 3 do
-                                    local params = RaycastParams.new()
-                                    params.FilterType = Enum.RaycastFilterType.Exclude
-                                    params.FilterDescendantsInstances = ignoreList
-                                    params.CollisionGroup = "Bullet"
-                                    
-                                    local res = Workspace:Raycast(lastPos, direction * rangeLimit, params)
-                                    if res then
-                                        table.insert(hits, {
-                                            Instance = res.Instance,
-                                            Position = res.Position,
-                                            Normal = res.Normal,
-                                            Material = res.Material.Name,
-                                            Distance = (res.Position - lastPos).Magnitude,
-                                            Exit = false
-                                        })
-                                        table.insert(ignoreList, res.Instance)
-                                        lastPos = res.Position
-                                    else
-                                        break
-                                    end
-                                end
-                                
-                                table.insert(hits, {
-                                    Instance = targetPart,
-                                    Position = targetPos,
-                                    Normal = Vector3.new(0, 1, 0),
-                                    Material = "Plastic",
-                                    Distance = (targetPos - lastPos).Magnitude,
-                                    Exit = false
-                                })
-                                
-                                self.LastShotTick = tick()
-                                return {
-                                    Distance = (targetPos - origin).Magnitude,
-                                    Origin = origin,
-                                    Direction = direction,
-                                    Hits = hits
-                                }
-                            end
-                            return oldCreate(self, aimingMode, isAiming)
-                        end
-                    end
-                    return instance
-                end
-                hooked = true
-                break
-            end
-        end
-    end
-    return hooked
-end
-
-task.spawn(function()
-    while true do
-        local success = pcall(hookBulletSystem)
-        if success then break end
-        task.wait(1.5)
-    end
-end)
-
 task.spawn(function()
     while not CharacterController or not CharacterClass do
         findLocomotionControllers()
         task.wait(1.5)
     end
+end)
+
+-- ====================================================================================
+-- Deep Workspace Raycast Redirection Engine (Universal Silent Aim)
+-- ====================================================================================
+local oldRaycast
+oldRaycast = hookmetamethod(game, "__namecall", function(self, origin, direction, params)
+    local method = getnamecallmethod()
+    
+    if Menu_Config.AimEnabled and self == Workspace and method == "Raycast" then
+        local debugInfo = debug.traceback()
+        
+        -- Intercept if the request is initiated from the Bullet tracking system
+        if debugInfo:find("Bullet") or debugInfo:find("_performRaycast") then
+            local targetPart = getAimTarget()
+            if targetPart and Menu_Config.SilentAim then
+                local targetPosition = targetPart.Position
+                -- Modify direction vector in-flight to target's location
+                local newDirection = (targetPosition - origin).Unit * direction.Magnitude
+                return oldRaycast(self, origin, newDirection, params)
+            end
+        end
+    end
+    
+    return oldRaycast(self, origin, direction, params)
 end)
 
 -- ====================================================================================
@@ -498,15 +430,16 @@ local function processBhop()
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
         local activeChar = CharacterController.getCurrentCharacter()
         
-        -- Override physics flags inside running Character class directly on the heartbeat frame
+        -- Bypass the custom tick limits inside Classes.Character
         if activeChar then
             local grounded = activeChar:CheckGroundContact()
             if grounded then
                 activeChar.IsJumpRequested = true
                 activeChar.IsJumping = false
                 activeChar.ReadyToJump = true
+                activeChar.Stamina = 100
+                activeChar.LastJumpTick = 0
                 
-                -- Invoke jump kinematics
                 pcall(CharacterController.jump)
             end
         end
