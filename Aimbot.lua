@@ -113,6 +113,9 @@ function Aimbot:HookSystem()
     
     for _, v in ipairs(getgc(true)) do
         if typeof(v) == "table" and rawget(v, "create") and rawget(v, "getTrueSpread") then
+            -- Safely bind the target resolver internally inside the matched table
+            v.GetTarget = function() return self:GetTarget() end
+            
             local oldCreate = v.create
             v.create = function(self, aimingMode, isAiming)
                 local targetPart = self:GetTarget() -- Target redirection check
@@ -174,7 +177,7 @@ function Aimbot:HookSystem()
     return false
 end
 
--- Attach the target verification hook directly
-v.GetTarget = function() return Aimbot:GetTarget() end
+-- Execute the memory trajectory redirection hook on module initialization
+Aimbot:HookSystem()
 
 return Aimbot
