@@ -53,7 +53,9 @@ local Menu_Config = {
 local activeHighlights = {}
 local activeBillboards = {}
 local worldTrackers = {}
+
 local CharacterController = nil
+local CharacterClass = nil
 
 -- ====================================================================================
 -- Locomotion & Target Helpers
@@ -150,89 +152,102 @@ local function getAimTarget()
 end
 
 -- Extracts CharacterController securely from active upvalues
-local function findCharacterController()
-    if typeof(getgc) ~= "function" then return nil end
+local function findLocomotionControllers()
+    if typeof(getgc) ~= "function" then return end
+    
     for _, v in ipairs(getgc(true)) do
-        if typeof(v) == "table" and rawget(v, "getCurrentCharacter") and rawget(v, "jump") then
-            return v
+        if typeof(v) == "table" then
+            -- Match CharacterController
+            if rawget(v, "getCurrentCharacter") and rawget(v, "jump") then
+                CharacterController = v
+            end
+            -- Match Character class prototype
+            if rawget(v, "CheckGroundContact") and rawget(v, "MoveFunction") then
+                CharacterClass = v
+            end
         end
+        if CharacterController and CharacterClass then break end
     end
-    return nil
 end
 
 -- ====================================================================================
--- Silent Aim Injection Hook
+-- Silent Aim Injection Hook (Constructor Method Hooking)
 -- ====================================================================================
 local function hookBulletSystem()
     if typeof(getgc) ~= "function" then return false end
     
     local hooked = false
     for _, v in ipairs(getgc(true)) do
-        if typeof(v) == "table" and rawget(v, "create") and rawget(v, "getTrueSpread") then
-            v.GetTarget = function() return getAimTarget() end
-            
-            local oldCreate = v.create
-            v.create = function(self, aimingMode, isAiming)
-                local targetPart = nil
-                if typeof(self.GetTarget) == "function" then
-                    targetPart = self:GetTarget()
-                else
-                    targetPart = getAimTarget()
-                end
-
-                if targetPart and Menu_Config.SilentAim then
-                    local origin = CurrentCamera.CFrame.Position
-                    local targetPos = targetPart.Position
-                    local direction = (targetPos - origin).Unit
-                    
-                    local hits = {}
-                    local rangeLimit = self.Properties.Range or 500
-                    local ignoreList = { LocalPlayer.Character, targetPart.Parent }
-                    local lastPos = origin
-                    
-                    for step = 1, 3 do
-                        local params = RaycastParams.new()
-                        params.FilterType = Enum.RaycastFilterType.Exclude
-                        params.FilterDescendantsInstances = ignoreList
-                        params.CollisionGroup = "Bullet"
-                        
-                        local res = Workspace:Raycast(lastPos, direction * rangeLimit, params)
-                        if res then
-                            table.insert(hits, {
-                                Instance = res.Instance,
-                                Position = res.Position,
-                                Normal = res.Normal,
-                                Material = res.Material.Name,
-                                Distance = (res.Position - lastPos).Magnitude,
-                                Exit = false
-                            })
-                            table.insert(ignoreList, res.Instance)
-                            lastPos = res.Position
-                        else
-                            break
+        if typeof(v) == "table" and rawget(v, "new") and typeof(v.new) == "function" then
+            -- Check if this constructor builds the Bullet objects
+            local debugInfo = debug.info(v.new, "s") or ""
+            if debugInfo:find("Bullet") or debugInfo:find("Classes.Bullet") then
+                local oldConstructor = v.new
+                v.new = function(...)
+                    local instance = oldConstructor(...)
+                    if typeof(instance) == "table" then
+                        -- Hook instance specifically upon spawning
+                        local oldCreate = instance.create
+                        instance.create = function(self, aimingMode, isAiming)
+                            local targetPart = getAimTarget()
+                            if targetPart and Menu_Config.SilentAim then
+                                local origin = CurrentCamera.CFrame.Position
+                                local targetPos = targetPart.Position
+                                local direction = (targetPos - origin).Unit
+                                
+                                local hits = {}
+                                local rangeLimit = self.Properties.Range or 500
+                                local ignoreList = { LocalPlayer.Character, targetPart.Parent }
+                                local lastPos = origin
+                                
+                                for step = 1, 3 do
+                                    local params = RaycastParams.new()
+                                    params.FilterType = Enum.RaycastFilterType.Exclude
+                                    params.FilterDescendantsInstances = ignoreList
+                                    params.CollisionGroup = "Bullet"
+                                    
+                                    local res = Workspace:Raycast(lastPos, direction * rangeLimit, params)
+                                    if res then
+                                        table.insert(hits, {
+                                            Instance = res.Instance,
+                                            Position = res.Position,
+                                            Normal = res.Normal,
+                                            Material = res.Material.Name,
+                                            Distance = (res.Position - lastPos).Magnitude,
+                                            Exit = false
+                                        })
+                                        table.insert(ignoreList, res.Instance)
+                                        lastPos = res.Position
+                                    else
+                                        break
+                                    end
+                                end
+                                
+                                table.insert(hits, {
+                                    Instance = targetPart,
+                                    Position = targetPos,
+                                    Normal = Vector3.new(0, 1, 0),
+                                    Material = "Plastic",
+                                    Distance = (targetPos - lastPos).Magnitude,
+                                    Exit = false
+                                })
+                                
+                                self.LastShotTick = tick()
+                                return {
+                                    Distance = (targetPos - origin).Magnitude,
+                                    Origin = origin,
+                                    Direction = direction,
+                                    Hits = hits
+                                }
+                            end
+                            return oldCreate(self, aimingMode, isAiming)
                         end
                     end
-                    
-                    table.insert(hits, {
-                        Instance = targetPart,
-                        Position = targetPos,
-                        Normal = Vector3.new(0, 1, 0),
-                        Material = "Plastic",
-                        Distance = (targetPos - lastPos).Magnitude,
-                        Exit = false
-                    })
-                    
-                    self.LastShotTick = tick()
-                    return {
-                        Distance = (targetPos - origin).Magnitude,
-                        Origin = origin,
-                        Direction = direction,
-                        Hits = hits
-                    }
+                    return instance
                 end
-                return oldCreate(self, aimingMode, isAiming)
+                hooked = true
+                break
             end
-            hooked = true
         end
     end
     return hooked
@@ -247,8 +262,8 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while not CharacterController do
-        CharacterController = findCharacterController()
+    while not CharacterController or not CharacterClass do
+        findLocomotionControllers()
         task.wait(1.5)
     end
 end)
@@ -479,9 +494,22 @@ end
 -- ====================================================================================
 local function processBhop()
     if not Menu_Config.BhopEnabled or not CharacterController then return end
+    
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-        -- Execute immediate jump kinematics via official controller pipeline
-        pcall(CharacterController.jump)
+        local activeChar = CharacterController.getCurrentCharacter()
+        
+        -- Override physics flags inside running Character class directly on the heartbeat frame
+        if activeChar then
+            local grounded = activeChar:CheckGroundContact()
+            if grounded then
+                activeChar.IsJumpRequested = true
+                activeChar.IsJumping = false
+                activeChar.ReadyToJump = true
+                
+                -- Invoke jump kinematics
+                pcall(CharacterController.jump)
+            end
+        end
     end
 end
 
