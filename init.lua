@@ -1,7 +1,8 @@
 -- Neverlose-Inspired Premium Glassmorphism UI Library
--- Optimized for clean dynamic scaling, theme customizability, and safe execution
+-- Optimized for clean dynamic scaling, keybind toggling, and safe execution
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -216,6 +217,35 @@ function NeverloseLib.CreateWindow(title, subtitle)
     UserSub.Font = Enum.Font.SourceSans
     UserSub.TextXAlignment = Enum.TextXAlignment.Left
     UserSub.Parent = Footer
+    
+    -- Global Menu Display Toggle Listener
+    self.ToggleKey = Enum.KeyCode.Insert
+    local UIOpen = true
+    
+    local ToggleConnection = UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == self.ToggleKey then
+            UIOpen = not UIOpen
+            MainFrame.Visible = UIOpen
+            
+            if blur then
+                blur.Enabled = UIOpen
+            end
+            
+            -- Restores or locks standard camera/mouse movement state safely
+            local ok, CameraController = pcall(function()
+                return require(ReplicatedStorage.Controllers.CameraController)
+            end)
+            if ok and CameraController then
+                CameraController.setMouseEnabled(UIOpen)
+            end
+        end
+    end)
+    
+    -- Clean up garbage collection leaks when destroyed
+    ScreenGui.Destroying:Connect(function()
+        ToggleConnection:Disconnect()
+        if blur then blur:Destroy() end
+    end)
     
     return self
 end
@@ -698,6 +728,10 @@ function NeverloseLib:Add3DAvatar(section)
     section.Destroying:Connect(function()
         connection:Disconnect()
     end)
+end
+
+function NeverloseLib:SetToggleKey(newKey)
+    self.ToggleKey = newKey
 end
 
 return NeverloseLib
