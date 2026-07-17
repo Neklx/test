@@ -6,6 +6,7 @@ local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
 
 local NeverloseLib = {}
 NeverloseLib.__index = NeverloseLib
@@ -62,7 +63,7 @@ function NeverloseLib.CreateWindow(title, subtitle)
     local MainFrame = Instance.new("CanvasGroup")
     MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 780, 0, 520)
-    MainFrame.Position = UDim2.new(0.5, -390, 0.5, -260)
+    MainFrame.Position = UDim2.new(0.5, -340, 0.5, -220)
     MainFrame.BackgroundColor3 = Color3.fromRGB(8, 11, 23)
     MainFrame.GroupTransparency = 0.12 -- Clean glass transparency
     MainFrame.BorderSizePixel = 0
@@ -613,7 +614,6 @@ function NeverloseLib:AddColorPicker(section, text, defaultColor, callback)
     PickerCorner.CornerRadius = UDim.new(0, 9)
     PickerCorner.Parent = PickerBtn
     
-    -- Custom color-spectrum options array
     local Palette = {
         Color3.fromRGB(0, 150, 255),  -- Default Cyan
         Color3.fromRGB(255, 80, 80),   -- Soft Red
@@ -628,9 +628,75 @@ function NeverloseLib:AddColorPicker(section, text, defaultColor, callback)
         local newColor = Palette[paletteIdx]
         PickerBtn.BackgroundColor3 = newColor
         
-        -- Trigger real-time theme updates across the dashboard
         UpdateThemeColor(newColor)
         callback(newColor)
+    end)
+end
+
+-- Feature: High-Tech Rotating 3D Viewport Character/Model Preview
+function NeverloseLib:Add3DAvatar(section)
+    local Row = Instance.new("Frame")
+    Row.Size = UDim2.new(0.9, 0, 0, 180) -- Fixed vertical space constraint inside list
+    Row.BackgroundTransparency = 1
+    Row.Parent = section
+    
+    local Viewport = Instance.new("ViewportFrame")
+    Viewport.Size = UDim2.new(1, 0, 1, 0)
+    Viewport.BackgroundTransparency = 1
+    Viewport.BorderSizePixel = 0
+    Viewport.Parent = Row
+    
+    -- Generate character visual clone safely
+    local dummy = Instance.new("Model")
+    dummy.Name = "Neverlose_Viewport_Dummy"
+    
+    local character = Players.LocalPlayer.Character
+    if character then
+        character.Archivable = true
+        for _, obj in ipairs(character:GetChildren()) do
+            -- Clone purely visual elements and geometries to prevent running scripts or mechanics
+            if obj:IsA("BasePart") or obj:IsA("Humanoid") or obj:IsA("CharacterAppearance") or obj:IsA("Shirt") or obj:IsA("Pants") or obj:IsA("BodyColors") or obj:IsA("Accessory") then
+                local cloned = obj:Clone()
+                cloned.Parent = dummy
+                if cloned:IsA("BasePart") then
+                    cloned.Anchored = true
+                end
+            end
+        end
+    else
+        -- Fallback Blocky Dummy if Character is missing/loading
+        local root = Instance.new("Part")
+        root.Size = Vector3.new(2, 2, 1)
+        root.Name = "HumanoidRootPart"
+        root.Anchored = true
+        root.Parent = dummy
+        dummy.PrimaryPart = root
+    end
+    
+    dummy:PivotTo(CFrame.new(0, 0, 0))
+    dummy.Parent = Viewport
+    
+    -- Dedicated Camera Projection Angle Setup
+    local camera = Instance.new("Camera")
+    camera.FieldOfView = 50
+    Viewport.CurrentCamera = camera
+    camera.Parent = Viewport
+    
+    -- Anchor Camera target focusing UpperTorso/Chest
+    local cameraDistance = 5.2
+    local angleY = 0
+    
+    -- Smooth Heartbeat Rotation Loop
+    local connection = RunService.Heartbeat:Connect(function(dt)
+        if not Viewport or not Viewport.Parent then return end
+        angleY = angleY + dt * 0.5 -- 0.5 Rads per second rotation speed
+        local rotCFrame = CFrame.Angles(0, angleY, 0)
+        camera.CFrame = CFrame.new(Vector3.new(0, 0.5, 0)) * rotCFrame * CFrame.new(0, 0, cameraDistance)
+    end)
+    
+    -- Auto-clean thread connection when destroyed
+    section.Destroying:Connect(function()
+        connection:Disconnect()
     end)
 end
 
